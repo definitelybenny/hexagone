@@ -19,6 +19,7 @@ import dev.definitelybenny.hexflipper.game.CampaignLevels
 import dev.definitelybenny.hexflipper.game.GameViewModel
 import dev.definitelybenny.hexflipper.game.LevelGenerator
 import dev.definitelybenny.hexflipper.game.ProgressManager
+import dev.definitelybenny.hexflipper.game.SoundManager
 import dev.definitelybenny.hexflipper.model.DifficultyTier
 
 /**
@@ -45,8 +46,15 @@ sealed class Screen(val route: String) {
 @Composable
 fun HexFlipperNavHost(
     navController: NavHostController,
-    progressManager: ProgressManager
+    progressManager: ProgressManager,
+    soundManager: SoundManager
 ) {
+    // Sync sound setting
+    val soundEnabled by progressManager.soundEnabled.collectAsState()
+    LaunchedEffect(soundEnabled) {
+        soundManager.enabled = soundEnabled
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.MainMenu.route
@@ -121,7 +129,10 @@ fun HexFlipperNavHost(
                 animatingStack = animatingStack,
                 moveCount = moveCount,
                 canUndo = canUndo,
-                onCellTapped = viewModel::onCellTapped,
+                onCellTapped = { cell ->
+                    soundManager.playTap()
+                    viewModel.onCellTapped(cell)
+                },
                 onUndo = viewModel::onUndo,
                 onHint = viewModel::onHint,
                 onPause = { navController.popBackStack() },
@@ -219,7 +230,10 @@ fun HexFlipperNavHost(
                 animatingStack = animatingStack,
                 moveCount = moveCount,
                 canUndo = canUndo,
-                onCellTapped = viewModel::onCellTapped,
+                onCellTapped = { cell ->
+                    soundManager.playTap()
+                    viewModel.onCellTapped(cell)
+                },
                 onUndo = viewModel::onUndo,
                 onHint = viewModel::onHint,
                 onPause = { navController.popBackStack() },

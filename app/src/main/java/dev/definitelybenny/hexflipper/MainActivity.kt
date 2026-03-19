@@ -13,17 +13,20 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.navigation.compose.rememberNavController
 import dev.definitelybenny.hexflipper.game.ProgressManager
+import dev.definitelybenny.hexflipper.game.SoundManager
 import dev.definitelybenny.hexflipper.ui.screens.HexFlipperNavHost
 import dev.definitelybenny.hexflipper.ui.theme.HexFlipperTheme
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var progressManager: ProgressManager
+    private lateinit var soundManager: SoundManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         progressManager = ProgressManager(applicationContext)
+        soundManager = SoundManager(applicationContext)
 
         // Hide system navigation bar for immersive gameplay
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
@@ -40,10 +43,16 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     HexFlipperNavHost(
                         navController = navController,
-                        progressManager = progressManager
+                        progressManager = progressManager,
+                        soundManager = soundManager
                     )
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        soundManager.release()
     }
 }
