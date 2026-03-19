@@ -46,8 +46,9 @@ fun LevelCompleteDialog(
     moveCount: Int,
     par: Int,
     isRandomMode: Boolean,
-    onNextLevel: () -> Unit,
+    onNext: () -> Unit,
     onReplay: () -> Unit,
+    onChangeDifficulty: (() -> Unit)? = null,
     onMenu: () -> Unit
 ) {
     // Semi-transparent overlay
@@ -114,7 +115,7 @@ fun LevelCompleteDialog(
 
                 // Next Level / New Puzzle button
                 Button(
-                    onClick = onNextLevel,
+                    onClick = onNext,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
@@ -152,6 +153,25 @@ fun LevelCompleteDialog(
                         fontWeight = FontWeight.Medium,
                         color = Color.White
                     )
+                }
+
+                if (isRandomMode && onChangeDifficulty != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = onChangeDifficulty,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            text = "Change Difficulty",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

@@ -59,7 +59,10 @@ class GameState {
     fun tapCell(cell: HexCell): MoveResult {
         val stack = boardState.stackAt(cell) ?: return MoveResult.Empty
 
-        if (!boardState.canMove(cell)) return MoveResult.Blocked(cell)
+        if (!boardState.canMove(cell)) {
+            moveCount++
+            return MoveResult.Blocked(cell)
+        }
 
         val path = boardState.slidePath(cell)
 

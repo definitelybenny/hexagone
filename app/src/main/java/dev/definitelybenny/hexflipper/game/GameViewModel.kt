@@ -77,39 +77,42 @@ class GameViewModel : ViewModel() {
 
         val stack = gameState.boardState.stackAt(cell) ?: return
 
-        if (!gameState.boardState.canMove(cell)) {
-            // Show a shake animation so the player knows the stack is blocked.
-            _animatingStack.value = AnimatingStack(
-                cell = cell,
-                stack = stack,
-                path = listOf(cell),
-                type = AnimationType.SHAKE
-            )
-            return
-        }
-
-        // Compute path *before* mutating state.
+        // Compute path *before* mutating state (needed for slide animation).
         val path = gameState.boardState.slidePath(cell)
 
-        // Perform the move inside GameState (updates undo stack & move count).
+        // Perform the move inside GameState (updates move count for both success and blocked).
         val result = gameState.tapCell(cell)
-        if (result is MoveResult.Success) {
-            // We want the UI to keep showing the stack while it animates out,
-            // so we defer the board state update until onAnimationComplete.
-            stateBeforePendingMove = gameState.boardState
-            pendingMoveResult = result
 
-            // Publish updated move count / undo availability immediately,
-            // but keep the old board so the stack is still visible.
-            _moveCount.value = gameState.moveCount
-            _canUndo.value = gameState.canUndo
+        when (result) {
+            is MoveResult.Blocked -> {
+                // Show a shake animation and update move count.
+                _moveCount.value = gameState.moveCount
+                _animatingStack.value = AnimatingStack(
+                    cell = cell,
+                    stack = stack,
+                    path = listOf(cell),
+                    type = AnimationType.SHAKE
+                )
+            }
+            is MoveResult.Success -> {
+                // We want the UI to keep showing the stack while it animates out,
+                // so we defer the board state update until onAnimationComplete.
+                stateBeforePendingMove = gameState.boardState
+                pendingMoveResult = result
 
-            _animatingStack.value = AnimatingStack(
-                cell = cell,
-                stack = result.stack,
-                path = path,
-                type = AnimationType.SLIDE_OFF
-            )
+                // Publish updated move count / undo availability immediately,
+                // but keep the old board so the stack is still visible.
+                _moveCount.value = gameState.moveCount
+                _canUndo.value = gameState.canUndo
+
+                _animatingStack.value = AnimatingStack(
+                    cell = cell,
+                    stack = result.stack,
+                    path = path,
+                    type = AnimationType.SLIDE_OFF
+                )
+            }
+            is MoveResult.Empty -> { /* shouldn't reach here since we checked stackAt above */ }
         }
     }
 

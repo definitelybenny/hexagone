@@ -2,6 +2,8 @@ package dev.definitelybenny.hexflipper.game
 
 import android.content.Context
 import android.content.SharedPreferences
+import dev.definitelybenny.hexflipper.model.DifficultyTier
+import dev.definitelybenny.hexflipper.model.TierStats
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -71,10 +73,63 @@ class ProgressManager(context: Context) {
         prefs.edit().putBoolean(KEY_MUSIC, enabled).apply()
     }
 
+    // ── Random mode stats ──────────────────────────────────
+
+    private val _randomStats = MutableStateFlow(loadRandomStats())
+    val randomStats: StateFlow<Map<DifficultyTier, TierStats>> = _randomStats.asStateFlow()
+
+    fun isTierUnlocked(tier: DifficultyTier): Boolean {
+        val prereq = tier.prerequisiteTier ?: return true
+        return getRandomSolved(prereq) >= tier.unlockRequirement
+    }
+
+    fun saveRandomResult(tier: DifficultyTier, moves: Int, stars: Int) {
+        val solved = getRandomSolved(tier) + 1
+        val currentBest = getRandomBestMoves(tier)
+        val best = if (currentBest == null) moves else minOf(currentBest, moves)
+        val totalStars = getRandomTotalStars(tier) + stars
+
+        prefs.edit()
+            .putInt("${KEY_RANDOM_SOLVED}${tier.name}", solved)
+            .putInt("${KEY_RANDOM_BEST}${tier.name}", best)
+            .putInt("${KEY_RANDOM_STARS}${tier.name}", totalStars)
+            .apply()
+
+        _randomStats.value = loadRandomStats()
+    }
+
+    private fun getRandomSolved(tier: DifficultyTier): Int =
+        prefs.getInt("${KEY_RANDOM_SOLVED}${tier.name}", 0)
+
+    private fun getRandomBestMoves(tier: DifficultyTier): Int? {
+        val value = prefs.getInt("${KEY_RANDOM_BEST}${tier.name}", -1)
+        return if (value >= 0) value else null
+    }
+
+    private fun getRandomTotalStars(tier: DifficultyTier): Int =
+        prefs.getInt("${KEY_RANDOM_STARS}${tier.name}", 0)
+
+    private fun loadRandomStats(): Map<DifficultyTier, TierStats> {
+        return DifficultyTier.entries.associateWith { tier ->
+            TierStats(
+                solved = prefs.getInt("${KEY_RANDOM_SOLVED}${tier.name}", 0),
+                bestMoves = prefs.getInt("${KEY_RANDOM_BEST}${tier.name}", -1)
+                    .let { if (it >= 0) it else null },
+                totalStars = prefs.getInt("${KEY_RANDOM_STARS}${tier.name}", 0)
+            )
+        }
+    }
+
+    // ── Reset ─────────────────────────────────────────────
+
     fun resetProgress() {
         _completedLevels.value = emptyMap()
-        prefs.edit().clear().putBoolean(KEY_SOUND, _soundEnabled.value)
-            .putBoolean(KEY_MUSIC, _musicEnabled.value).apply()
+        prefs.edit().clear()
+            .putBoolean(KEY_SOUND, _soundEnabled.value)
+            .putBoolean(KEY_MUSIC, _musicEnabled.value)
+            .putBoolean(KEY_HAPTIC, _hapticEnabled.value)
+            .apply()
+        _randomStats.value = loadRandomStats()
     }
 
     private fun loadCompletedLevels(): Map<Int, Int> {
@@ -96,5 +151,8 @@ class ProgressManager(context: Context) {
         private const val KEY_MUSIC = "music_enabled"
         private const val KEY_HAPTIC = "haptic_enabled"
         private const val KEY_TUTORIAL_SEEN = "tutorial_seen"
+        private const val KEY_RANDOM_SOLVED = "random_solved_"
+        private const val KEY_RANDOM_BEST = "random_best_"
+        private const val KEY_RANDOM_STARS = "random_stars_"
     }
 }

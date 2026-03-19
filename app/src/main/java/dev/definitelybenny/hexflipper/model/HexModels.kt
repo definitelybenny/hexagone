@@ -230,3 +230,35 @@ data class Level(
 ) {
     fun initialBoardState(): BoardState = BoardState(cells, stacks)
 }
+
+/** Difficulty tiers for Random Mode. */
+enum class DifficultyTier(
+    val label: String,
+    val stackRange: IntRange,
+    val unlockRequirement: Int
+) {
+    EASY("Easy", 3..5, 0),
+    MEDIUM("Medium", 6..8, 5),
+    HARD("Hard", 9..12, 5),
+    EXPERT("Expert", 13..16, 5),
+    MASTER("Master", 17..22, 5),
+    INSANE("Insane", 23..30, 5);
+
+    /** The tier that must be completed to unlock this one, or null if always unlocked. */
+    val prerequisiteTier: DifficultyTier?
+        get() = when (this) {
+            EASY -> null
+            MEDIUM -> EASY
+            HARD -> MEDIUM
+            EXPERT -> HARD
+            MASTER -> EXPERT
+            INSANE -> MASTER
+        }
+}
+
+/** Stats for a single difficulty tier in Random Mode. */
+data class TierStats(
+    val solved: Int = 0,
+    val bestMoves: Int? = null,
+    val totalStars: Int = 0
+)

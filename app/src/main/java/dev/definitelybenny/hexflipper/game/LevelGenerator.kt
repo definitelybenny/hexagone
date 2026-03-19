@@ -2,40 +2,34 @@ package dev.definitelybenny.hexflipper.game
 
 import dev.definitelybenny.hexflipper.model.BoardState
 import dev.definitelybenny.hexflipper.model.CellType
+import dev.definitelybenny.hexflipper.model.DifficultyTier
 import dev.definitelybenny.hexflipper.model.HexCell
 import dev.definitelybenny.hexflipper.model.HexDirection
 import dev.definitelybenny.hexflipper.model.HexStack
 import dev.definitelybenny.hexflipper.model.Level
-import dev.definitelybenny.hexflipper.model.PieceColor
 import kotlin.random.Random
 
 /**
  * Procedural level generator for random / endless mode.
- * Generates solvable uniform-stack hex puzzles.
+ * Generates solvable hex puzzles based on difficulty tier.
  */
 object LevelGenerator {
-
-    private fun stackCount(difficulty: Int): Int = when (difficulty.coerceIn(1, 10)) {
-        1 -> 3; 2 -> 4; 3 -> 5; 4 -> 6; 5 -> 7
-        6 -> 8; 7 -> 9; 8 -> 10; 9 -> 11; 10 -> 12
-        else -> 7
-    }
-
-    private fun maxHeight(difficulty: Int): Int = when {
-        difficulty <= 3 -> 1
-        difficulty <= 6 -> 2
-        else -> 3
-    }
 
     private const val MAX_BOARD_ATTEMPTS = 50
     private const val MAX_STACK_ATTEMPTS = 200
 
-    fun generate(difficulty: Int = 5, random: Random = Random): Level {
-        val diff = difficulty.coerceIn(1, 10)
-        val numStacks = stackCount(diff)
-        val boardSize = numStacks + 5 + diff  // extra empty cells
-        val maxH = maxHeight(diff)
-        val addWalls = diff >= 7
+    /**
+     * Generate a solvable level for the given difficulty tier.
+     * Stack count is randomly chosen within the tier's range.
+     * Board size auto-scales to fit the stacks with movement room.
+     */
+    fun generate(tier: DifficultyTier, random: Random = Random): Level {
+        val numStacks = random.nextInt(tier.stackRange.first, tier.stackRange.last + 1)
+        return generateWithStackCount(numStacks, random)
+    }
+
+    private fun generateWithStackCount(numStacks: Int, random: Random): Level {
+        val boardSize = numStacks + maxOf(6, numStacks * 2 / 3)
         val directions = HexDirection.entries
 
         repeat(MAX_BOARD_ATTEMPTS) {
@@ -48,33 +42,26 @@ object LevelGenerator {
                 val stackCells = shuffled.take(numStacks)
                 val remaining = shuffled.drop(numStacks)
 
-                // Build stacks
                 val stacks = mutableMapOf<HexCell, HexStack>()
                 for (cell in stackCells) {
-                    val height = random.nextInt(1, maxH + 1)
                     val dir = directions[random.nextInt(directions.size)]
                     stacks[cell] = HexStack(
                         cell = cell,
                         color = dir.color,
                         direction = dir,
-                        height = height
+                        height = 1
                     )
                 }
 
-                // Build cells map (empty cells + optional walls)
                 val cells = mutableMapOf<HexCell, CellType>()
                 for (cell in remaining) {
-                    if (addWalls && random.nextFloat() < 0.08f) {
-                        cells[cell] = CellType.WALL
-                    } else {
-                        cells[cell] = CellType.EMPTY
-                    }
+                    cells[cell] = CellType.EMPTY
                 }
 
                 val state = BoardState(cells, stacks)
                 val par = solve(state)
 
-                if (par != null && (diff <= 1 || par > 1)) {
+                if (par != null && par > 1) {
                     return Level(number = 0, cells = cells, stacks = stacks, par = par)
                 }
             }
@@ -105,9 +92,9 @@ object LevelGenerator {
     }
 
     /**
-     * BFS solver. Each move removes one entire stack. Returns min moves or null.
+     * BFS solver. Each move removes one stack. Returns min moves or null.
      */
-    private fun solve(initial: BoardState): Int? {
+    internal fun solve(initial: BoardState): Int? {
         if (initial.isComplete) return 0
 
         fun stateKey(state: BoardState): List<Long> =

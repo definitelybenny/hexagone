@@ -19,6 +19,7 @@ import dev.definitelybenny.hexflipper.game.CampaignLevels
 import dev.definitelybenny.hexflipper.game.GameViewModel
 import dev.definitelybenny.hexflipper.game.LevelGenerator
 import dev.definitelybenny.hexflipper.game.ProgressManager
+import dev.definitelybenny.hexflipper.model.DifficultyTier
 
 /**
  * Route definitions for Hex Flipper navigation.
@@ -27,7 +28,11 @@ sealed class Screen(val route: String) {
     data object MainMenu : Screen("main_menu")
     data object LevelSelect : Screen("level_select")
     data object Settings : Screen("settings")
-    data object RandomGame : Screen("random_game")
+    data object DifficultySelect : Screen("difficulty_select")
+
+    data object RandomGame : Screen("random_game/{tier}") {
+        fun createRoute(tier: DifficultyTier): String = "random_game/${tier.name}"
+    }
 
     data object Game : Screen("game/{levelNumber}") {
         fun createRoute(levelNumber: Int): String = "game/$levelNumber"
@@ -52,7 +57,7 @@ fun HexFlipperNavHost(
                     navController.navigate(Screen.LevelSelect.route)
                 },
                 onRandomClick = {
-                    navController.navigate(Screen.RandomGame.route)
+                    navController.navigate(Screen.DifficultySelect.route)
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
@@ -143,7 +148,7 @@ fun HexFlipperNavHost(
                     moveCount = moveCount,
                     par = level.par,
                     isRandomMode = false,
-                    onNextLevel = {
+                    onNext = {
                         val nextLevel = levelNumber + 1
                         if (nextLevel <= CampaignLevels.levels.size) {
                             navController.popBackStack()
@@ -158,11 +163,32 @@ fun HexFlipperNavHost(
             }
         }
 
-        composable(Screen.RandomGame.route) {
-            val viewModel: GameViewModel = viewModel()
-            val currentLevel = remember { LevelGenerator.generate(difficulty = 5) }
+        composable(Screen.DifficultySelect.route) {
+            val randomStats by progressManager.randomStats.collectAsState()
 
-            LaunchedEffect(Unit) {
+            DifficultySelectScreen(
+                tierStats = randomStats,
+                isTierUnlocked = { tier -> progressManager.isTierUnlocked(tier) },
+                onTierClick = { tier ->
+                    navController.navigate(Screen.RandomGame.createRoute(tier))
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.RandomGame.route,
+            arguments = listOf(
+                navArgument("tier") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val tierName = backStackEntry.arguments?.getString("tier") ?: DifficultyTier.EASY.name
+            val tier = DifficultyTier.valueOf(tierName)
+            val viewModel: GameViewModel = viewModel()
+
+            var currentLevel by remember { mutableStateOf(LevelGenerator.generate(tier)) }
+
+            LaunchedEffect(currentLevel) {
                 viewModel.loadLevel(currentLevel)
             }
 
@@ -210,17 +236,24 @@ fun HexFlipperNavHost(
             }
 
             if (isComplete) {
+                val stars = starRating.stars
+                LaunchedEffect(Unit) {
+                    progressManager.saveRandomResult(tier, moveCount, stars)
+                }
+
                 LevelCompleteDialog(
-                    stars = starRating.stars,
+                    stars = stars,
                     moveCount = moveCount,
                     par = currentLevel.par,
                     isRandomMode = true,
-                    onNextLevel = {
-                        viewModel.loadLevel(LevelGenerator.generate(difficulty = 5))
+                    onNext = {
+                        currentLevel = LevelGenerator.generate(tier)
                     },
                     onReplay = {
-                        // For random, "replay" generates a new puzzle
-                        viewModel.loadLevel(LevelGenerator.generate(difficulty = 5))
+                        viewModel.loadLevel(currentLevel)
+                    },
+                    onChangeDifficulty = {
+                        navController.popBackStack(Screen.DifficultySelect.route, false)
                     },
                     onMenu = { navController.popBackStack(Screen.MainMenu.route, false) }
                 )
