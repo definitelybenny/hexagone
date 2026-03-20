@@ -70,6 +70,19 @@ object LevelGenerator {
         return createFallbackLevel()
     }
 
+    /**
+     * Hex distance from origin (0,0) using cube coordinates.
+     */
+    private fun hexDistance(cell: HexCell): Int {
+        val s = -cell.q - cell.r
+        return maxOf(kotlin.math.abs(cell.q), kotlin.math.abs(cell.r), kotlin.math.abs(s))
+    }
+
+    /**
+     * Generate a board shape biased toward the center.
+     * Frontier cells closer to (0,0) are strongly preferred,
+     * producing compact, centrally-clustered boards.
+     */
     private fun generateBoardShape(size: Int, random: Random): Set<HexCell> {
         val cells = mutableSetOf(HexCell(0, 0))
         val frontier = mutableListOf<HexCell>()
@@ -77,7 +90,19 @@ object LevelGenerator {
             frontier.add(HexCell(0, 0).neighbor(dir))
         }
         while (cells.size < size && frontier.isNotEmpty()) {
-            val idx = random.nextInt(frontier.size)
+            // Weight each frontier cell by 1/(1+distance)^2 so closer cells are strongly preferred
+            val weights = frontier.map { 1.0 / ((1 + hexDistance(it)).toDouble() * (1 + hexDistance(it)).toDouble()) }
+            val totalWeight = weights.sum()
+            var roll = random.nextDouble() * totalWeight
+            var idx = 0
+            for (i in weights.indices) {
+                roll -= weights[i]
+                if (roll <= 0.0) {
+                    idx = i
+                    break
+                }
+            }
+
             val cell = frontier[idx]
             frontier[idx] = frontier.last()
             frontier.removeAt(frontier.lastIndex)
