@@ -117,43 +117,67 @@ object LevelGenerator {
     }
 
     /**
-     * BFS solver. Each move removes one stack. Returns min moves or null.
+     * Check solvability using dependency graph cycle detection.
+     *
+     * For each stack, walk its exit path to find which other stacks block it.
+     * This builds a directed graph: edge A → B means "A blocks B's exit".
+     * If the graph is a DAG (no cycles), a valid removal order exists and
+     * par = number of stacks. If there's a cycle, the puzzle is unsolvable.
+     *
+     * O(n²) worst case vs O(n!) for BFS — fast even for 30+ stacks.
      */
     internal fun solve(initial: BoardState): Int? {
         if (initial.isComplete) return 0
 
-        fun stateKey(state: BoardState): List<Long> =
-            state.stacks.keys.map { cell ->
-                ((cell.q.toLong() and 0xFFFF) shl 16) or (cell.r.toLong() and 0xFFFF)
-            }.sorted()
+        val stackCells = initial.stacks.keys.toList()
+        val n = stackCells.size
+        if (n == 0) return 0
 
-        val visited = HashSet<List<Long>>(512)
-        visited.add(stateKey(initial))
-
-        var frontier = listOf(initial)
-        var depth = 0
-
-        while (frontier.isNotEmpty()) {
-            val nextFrontier = mutableListOf<BoardState>()
-
-            for (state in frontier) {
-                for (cell in state.stacks.keys) {
-                    if (!state.canMove(cell)) continue
-                    val next = state.removeStack(cell)
-                    if (next.isComplete) return depth + 1
-                    val key = stateKey(next)
-                    if (visited.add(key)) {
-                        nextFrontier.add(next)
-                    }
-                }
-            }
-
-            depth++
-            frontier = nextFrontier
-            if (visited.size > 500_000) return null
+        // Build adjacency: blockedBy[cell] = set of cells that block this cell's exit
+        val blockedBy = mutableMapOf<HexCell, MutableSet<HexCell>>()
+        for (cell in stackCells) {
+            blockedBy[cell] = mutableSetOf()
         }
 
-        return null
+        for (cell in stackCells) {
+            val stack = initial.stacks[cell]!!
+            var current = cell.neighbor(stack.direction)
+            while (current in initial.cells || current in initial.stacks) {
+                if (initial.stacks.containsKey(current)) {
+                    // 'current' blocks 'cell' — cell can't move until current is removed
+                    blockedBy[cell]!!.add(current)
+                }
+                current = current.neighbor(stack.direction)
+            }
+        }
+
+        // Topological sort via Kahn's algorithm — if all nodes are processed, it's a DAG
+        val inDegree = mutableMapOf<HexCell, Int>()
+        for (cell in stackCells) {
+            inDegree[cell] = blockedBy[cell]!!.size
+        }
+
+        val queue = ArrayDeque<HexCell>()
+        for (cell in stackCells) {
+            if (inDegree[cell] == 0) queue.addLast(cell)
+        }
+
+        var processed = 0
+        while (queue.isNotEmpty()) {
+            val cell = queue.removeFirst()
+            processed++
+
+            // Removing this cell unblocks others that depended on it
+            for (other in stackCells) {
+                if (blockedBy[other]!!.contains(cell)) {
+                    val newDegree = inDegree[other]!! - 1
+                    inDegree[other] = newDegree
+                    if (newDegree == 0) queue.addLast(other)
+                }
+            }
+        }
+
+        return if (processed == n) n else null
     }
 
     private fun createFallbackLevel(): Level {

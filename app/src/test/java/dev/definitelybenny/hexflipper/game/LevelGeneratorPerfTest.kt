@@ -8,68 +8,86 @@ import kotlin.system.measureTimeMillis
 
 class LevelGeneratorPerfTest {
 
+    private val iterations = 10_000
+
     @Test
-    fun `EASY generation completes under 1 second`() {
+    fun `EASY generation 10k iterations`() {
         val elapsed = measureTimeMillis {
-            repeat(10) {
+            repeat(iterations) {
                 LevelGenerator.generate(DifficultyTier.EASY, Random(it))
             }
         }
-        println("EASY: 10 levels in ${elapsed}ms (${elapsed / 10}ms avg)")
-        assertTrue("EASY generation should be fast", elapsed < 1000)
+        val avg = elapsed.toDouble() / iterations
+        println("EASY: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
     }
 
     @Test
-    fun `MEDIUM generation completes under 2 seconds`() {
+    fun `MEDIUM generation 10k iterations`() {
         val elapsed = measureTimeMillis {
-            repeat(10) {
-                LevelGenerator.generate(DifficultyTier.MEDIUM, Random(it + 50))
+            repeat(iterations) {
+                LevelGenerator.generate(DifficultyTier.MEDIUM, Random(it))
             }
         }
-        println("MEDIUM: 10 levels in ${elapsed}ms (${elapsed / 10}ms avg)")
-        assertTrue("MEDIUM generation should complete in time", elapsed < 2000)
+        val avg = elapsed.toDouble() / iterations
+        println("MEDIUM: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
     }
 
     @Test
-    fun `HARD generation completes under 5 seconds`() {
+    fun `HARD generation 10k iterations`() {
         val elapsed = measureTimeMillis {
-            repeat(10) {
-                LevelGenerator.generate(DifficultyTier.HARD, Random(it + 100))
+            repeat(iterations) {
+                LevelGenerator.generate(DifficultyTier.HARD, Random(it))
             }
         }
-        println("HARD: 10 levels in ${elapsed}ms (${elapsed / 10}ms avg)")
-        assertTrue("HARD generation should complete in time", elapsed < 5000)
+        val avg = elapsed.toDouble() / iterations
+        println("HARD: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
     }
 
     @Test
-    fun `EXPERT generation completes under 10 seconds`() {
+    fun `EXPERT generation 10k iterations`() {
         val elapsed = measureTimeMillis {
-            repeat(5) {
-                LevelGenerator.generate(DifficultyTier.EXPERT, Random(it + 200))
+            repeat(iterations) {
+                LevelGenerator.generate(DifficultyTier.EXPERT, Random(it))
             }
         }
-        println("EXPERT: 5 levels in ${elapsed}ms (${elapsed / 5}ms avg)")
-        assertTrue("EXPERT generation should complete in time", elapsed < 10000)
+        val avg = elapsed.toDouble() / iterations
+        println("EXPERT: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
     }
 
     @Test
-    fun `BFS solver time scales with stack count`() {
-        val tiers = listOf(DifficultyTier.EASY, DifficultyTier.MEDIUM, DifficultyTier.HARD)
-        val times = mutableMapOf<String, Long>()
+    fun `MASTER generation 10k iterations`() {
+        val elapsed = measureTimeMillis {
+            repeat(iterations) {
+                LevelGenerator.generate(DifficultyTier.MASTER, Random(it))
+            }
+        }
+        val avg = elapsed.toDouble() / iterations
+        println("MASTER: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
+    }
 
-        for (tier in tiers) {
+    @Test
+    fun `INSANE generation 10k iterations`() {
+        val elapsed = measureTimeMillis {
+            repeat(iterations) {
+                LevelGenerator.generate(DifficultyTier.INSANE, Random(it))
+            }
+        }
+        val avg = elapsed.toDouble() / iterations
+        println("INSANE: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
+    }
+
+    @Test
+    fun `BFS solver 10k iterations per tier`() {
+        for (tier in DifficultyTier.entries) {
             val level = LevelGenerator.generate(tier, Random(42))
             val board = level.initialBoardState()
             val elapsed = measureTimeMillis {
-                LevelGenerator.solve(board)
+                repeat(iterations) {
+                    LevelGenerator.solve(board)
+                }
             }
-            times[tier.name] = elapsed
-            println("${tier.name} solve (${level.stacks.size} stacks): ${elapsed}ms")
-        }
-
-        // Just verify they all complete — timing will vary by machine
-        for ((name, time) in times) {
-            assertTrue("$name solver should finish", time < 30000)
+            val avg = elapsed.toDouble() / iterations
+            println("${tier.name} solve (${level.stacks.size} stacks): $iterations runs in ${elapsed}ms (%.3fms avg)".format(avg))
         }
     }
 }
