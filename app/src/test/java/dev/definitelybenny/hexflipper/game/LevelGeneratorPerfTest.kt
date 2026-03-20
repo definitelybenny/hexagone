@@ -9,6 +9,7 @@ import kotlin.system.measureTimeMillis
 class LevelGeneratorPerfTest {
 
     private val iterations = 10_000
+    private val heavyIterations = 100  // for Master/Insane with large stack counts
 
     @Test
     fun `EASY generation 10k iterations`() {
@@ -55,25 +56,25 @@ class LevelGeneratorPerfTest {
     }
 
     @Test
-    fun `MASTER generation 10k iterations`() {
+    fun `MASTER generation 100 iterations`() {
         val elapsed = measureTimeMillis {
-            repeat(iterations) {
+            repeat(heavyIterations) {
                 LevelGenerator.generate(DifficultyTier.MASTER, Random(it))
             }
         }
-        val avg = elapsed.toDouble() / iterations
-        println("MASTER: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
+        val avg = elapsed.toDouble() / heavyIterations
+        println("MASTER: $heavyIterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
     }
 
     @Test
-    fun `INSANE generation 10k iterations`() {
+    fun `INSANE generation 100 iterations`() {
         val elapsed = measureTimeMillis {
-            repeat(iterations) {
+            repeat(heavyIterations) {
                 LevelGenerator.generate(DifficultyTier.INSANE, Random(it))
             }
         }
-        val avg = elapsed.toDouble() / iterations
-        println("INSANE: $iterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
+        val avg = elapsed.toDouble() / heavyIterations
+        println("INSANE: $heavyIterations levels in ${elapsed}ms (%.3fms avg)".format(avg))
     }
 
     @Test

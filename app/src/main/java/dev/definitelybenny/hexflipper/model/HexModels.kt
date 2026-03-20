@@ -239,10 +239,10 @@ enum class DifficultyTier(
 ) {
     EASY("Easy", 3..5, 0),
     MEDIUM("Medium", 6..8, 5),
-    HARD("Hard", 9..12, 5),
-    EXPERT("Expert", 13..16, 5),
-    MASTER("Master", 17..22, 5),
-    INSANE("Insane", 23..30, 5);
+    HARD("Hard", 9..14, 5),
+    EXPERT("Expert", 15..25, 5),
+    MASTER("Master", 26..50, 5),
+    INSANE("Insane", 51..100, 5);
 
     /** The tier that must be completed to unlock this one, or null if always unlocked. */
     val prerequisiteTier: DifficultyTier?

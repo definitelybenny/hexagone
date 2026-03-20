@@ -80,40 +80,65 @@ object LevelGenerator {
 
     /**
      * Generate a board shape biased toward the center.
-     * Frontier cells closer to (0,0) are strongly preferred,
-     * producing compact, centrally-clustered boards.
+     *
+     * Uses a sorted frontier approach: all frontier cells are sorted by distance,
+     * then a weighted random pick favors closer cells. The frontier is maintained
+     * efficiently with a set to avoid duplicate processing.
      */
     private fun generateBoardShape(size: Int, random: Random): Set<HexCell> {
         val cells = mutableSetOf(HexCell(0, 0))
+        val inFrontier = mutableSetOf<HexCell>()
         val frontier = mutableListOf<HexCell>()
+
         for (dir in HexDirection.entries) {
-            frontier.add(HexCell(0, 0).neighbor(dir))
+            val nb = HexCell(0, 0).neighbor(dir)
+            if (inFrontier.add(nb)) frontier.add(nb)
         }
+
         while (cells.size < size && frontier.isNotEmpty()) {
-            // Weight each frontier cell by 1/(1+distance)^2 so closer cells are strongly preferred
-            val weights = frontier.map { 1.0 / ((1 + hexDistance(it)).toDouble() * (1 + hexDistance(it)).toDouble()) }
-            val totalWeight = weights.sum()
-            var roll = random.nextDouble() * totalWeight
-            var idx = 0
-            for (i in weights.indices) {
-                roll -= weights[i]
-                if (roll <= 0.0) {
-                    idx = i
-                    break
-                }
+            // For small frontiers, use weighted selection. For large ones, just pick
+            // from the closest candidates to avoid O(n) weight computation.
+            val idx = if (frontier.size <= 50) {
+                weightedPick(frontier, random)
+            } else {
+                // Sort by distance, pick randomly from the closest third
+                frontier.sortBy { hexDistance(it) }
+                val pickRange = maxOf(1, frontier.size / 3)
+                random.nextInt(pickRange)
             }
 
             val cell = frontier[idx]
             frontier[idx] = frontier.last()
             frontier.removeAt(frontier.lastIndex)
+            inFrontier.remove(cell)
+
             if (cell in cells) continue
             cells.add(cell)
+
             for (dir in HexDirection.entries) {
                 val nb = cell.neighbor(dir)
-                if (nb !in cells) frontier.add(nb)
+                if (nb !in cells && inFrontier.add(nb)) {
+                    frontier.add(nb)
+                }
             }
         }
         return cells
+    }
+
+    private fun weightedPick(frontier: List<HexCell>, random: Random): Int {
+        val weights = DoubleArray(frontier.size) { i ->
+            val d = hexDistance(frontier[i])
+            1.0 / ((1 + d).toDouble() * (1 + d).toDouble())
+        }
+        var totalWeight = 0.0
+        for (w in weights) totalWeight += w
+
+        var roll = random.nextDouble() * totalWeight
+        for (i in weights.indices) {
+            roll -= weights[i]
+            if (roll <= 0.0) return i
+        }
+        return weights.lastIndex
     }
 
     /**
@@ -124,7 +149,7 @@ object LevelGenerator {
      * If the graph is a DAG (no cycles), a valid removal order exists and
      * par = number of stacks. If there's a cycle, the puzzle is unsolvable.
      *
-     * O(n²) worst case vs O(n!) for BFS — fast even for 30+ stacks.
+     * O(n²) worst case — fast even for 100 stacks.
      */
     internal fun solve(initial: BoardState): Int? {
         if (initial.isComplete) return 0
@@ -133,47 +158,45 @@ object LevelGenerator {
         val n = stackCells.size
         if (n == 0) return 0
 
-        // Build adjacency: blockedBy[cell] = set of cells that block this cell's exit
-        val blockedBy = mutableMapOf<HexCell, MutableSet<HexCell>>()
-        for (cell in stackCells) {
-            blockedBy[cell] = mutableSetOf()
+        // Build adjacency: for each stack, which stacks block its exit?
+        // Also track reverse edges for efficient in-degree updates.
+        val blockedByCount = IntArray(n)
+        val cellToIndex = HashMap<HexCell, Int>(n * 2)
+        for (i in stackCells.indices) {
+            cellToIndex[stackCells[i]] = i
         }
 
-        for (cell in stackCells) {
+        // blocks[i] = list of indices that stack i blocks (reverse edges)
+        val blocks = Array(n) { mutableListOf<Int>() }
+
+        for (i in stackCells.indices) {
+            val cell = stackCells[i]
             val stack = initial.stacks[cell]!!
             var current = cell.neighbor(stack.direction)
             while (current in initial.cells || current in initial.stacks) {
-                if (initial.stacks.containsKey(current)) {
+                val blockerIdx = cellToIndex[current]
+                if (blockerIdx != null) {
                     // 'current' blocks 'cell' — cell can't move until current is removed
-                    blockedBy[cell]!!.add(current)
+                    blockedByCount[i]++
+                    blocks[blockerIdx].add(i)
                 }
                 current = current.neighbor(stack.direction)
             }
         }
 
-        // Topological sort via Kahn's algorithm — if all nodes are processed, it's a DAG
-        val inDegree = mutableMapOf<HexCell, Int>()
-        for (cell in stackCells) {
-            inDegree[cell] = blockedBy[cell]!!.size
-        }
-
-        val queue = ArrayDeque<HexCell>()
-        for (cell in stackCells) {
-            if (inDegree[cell] == 0) queue.addLast(cell)
+        // Kahn's algorithm — topological sort
+        val queue = ArrayDeque<Int>()
+        for (i in 0 until n) {
+            if (blockedByCount[i] == 0) queue.addLast(i)
         }
 
         var processed = 0
         while (queue.isNotEmpty()) {
-            val cell = queue.removeFirst()
+            val idx = queue.removeFirst()
             processed++
-
-            // Removing this cell unblocks others that depended on it
-            for (other in stackCells) {
-                if (blockedBy[other]!!.contains(cell)) {
-                    val newDegree = inDegree[other]!! - 1
-                    inDegree[other] = newDegree
-                    if (newDegree == 0) queue.addLast(other)
-                }
+            for (unblocked in blocks[idx]) {
+                blockedByCount[unblocked]--
+                if (blockedByCount[unblocked] == 0) queue.addLast(unblocked)
             }
         }
 

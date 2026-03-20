@@ -34,10 +34,10 @@ class DifficultyTierTest {
     }
 
     @Test
-    fun `stack ranges cover 3 to 30`() {
+    fun `stack ranges cover 3 to 100`() {
         val allValues = DifficultyTier.entries.flatMap { it.stackRange.toList() }
         assertEquals(3, allValues.min())
-        assertEquals(30, allValues.max())
+        assertEquals(100, allValues.max())
     }
 
     @Test

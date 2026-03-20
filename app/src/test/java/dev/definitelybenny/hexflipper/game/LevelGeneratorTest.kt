@@ -31,12 +31,12 @@ class LevelGeneratorTest {
     }
 
     @Test
-    fun `HARD generates 9-12 stacks`() {
+    fun `HARD generates 9-14 stacks`() {
         repeat(10) {
             val level = LevelGenerator.generate(DifficultyTier.HARD, Random(it + 100))
             assertTrue(
-                "HARD should have 9-12 stacks, got ${level.stacks.size}",
-                level.stacks.size in 9..12
+                "HARD should have 9-14 stacks, got ${level.stacks.size}",
+                level.stacks.size in 9..14
             )
         }
     }
