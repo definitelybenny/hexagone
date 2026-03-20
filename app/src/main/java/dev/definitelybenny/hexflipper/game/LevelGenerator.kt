@@ -29,7 +29,17 @@ object LevelGenerator {
     }
 
     private fun generateWithStackCount(numStacks: Int, random: Random): Level {
-        val boardSize = numStacks + maxOf(6, numStacks * 2 / 3)
+        // Use constructive placement for large puzzles — much faster than random trial and error
+        if (numStacks > 20) {
+            return generateLargeLevel(numStacks, random)
+        }
+
+        // Small puzzles: random placement with solvability check
+        val emptyPadding = when {
+            numStacks <= 8 -> maxOf(4, numStacks)
+            else -> numStacks / 2
+        }
+        val boardSize = numStacks + emptyPadding
         val directions = HexDirection.entries
 
         repeat(MAX_BOARD_ATTEMPTS) {
@@ -68,6 +78,123 @@ object LevelGenerator {
         }
 
         return createFallbackLevel()
+    }
+
+    /**
+     * Constructive generation for large puzzles (20+ stacks).
+     *
+     * Assigns random directions first, then detects and breaks dependency
+     * cycles by re-pointing only the stacks involved in cycles toward the
+     * nearest board edge. This preserves most of the randomness/difficulty
+     * while guaranteeing solvability.
+     */
+    private fun generateLargeLevel(numStacks: Int, random: Random): Level {
+        val emptyPadding = maxOf(2, numStacks / 5)
+        val boardSize = numStacks + emptyPadding
+        val directions = HexDirection.entries
+
+        repeat(MAX_BOARD_ATTEMPTS) {
+            val allCells = generateBoardShape(boardSize, random)
+            val cellList = allCells.toList()
+            if (cellList.size < numStacks + 1) return@repeat
+
+            val shuffled = cellList.shuffled(random)
+            val stackCells = shuffled.take(numStacks)
+            val remaining = shuffled.drop(numStacks)
+
+            // Step 1: assign random directions
+            val stacks = mutableMapOf<HexCell, HexStack>()
+            for (cell in stackCells) {
+                val dir = directions[random.nextInt(directions.size)]
+                stacks[cell] = HexStack(cell = cell, color = dir.color, direction = dir, height = 1)
+            }
+
+            // Step 2: find stacks involved in cycles and re-point them
+            val cycleCells = findCycleCells(stacks, allCells)
+            for (cell in cycleCells) {
+                val shuffledDirs = directions.shuffled(random)
+                val dir = shuffledDirs.minByOrNull { d -> stepsToExit(cell, d, allCells) }
+                    ?: shuffledDirs.first()
+                stacks[cell] = HexStack(cell = cell, color = dir.color, direction = dir, height = 1)
+            }
+
+            val cells = mutableMapOf<HexCell, CellType>()
+            for (cell in remaining) {
+                cells[cell] = CellType.EMPTY
+            }
+
+            val state = BoardState(cells, stacks)
+            val par = solve(state)
+
+            if (par != null && par > 1) {
+                return Level(number = 0, cells = cells, stacks = stacks, par = par)
+            }
+        }
+
+        return createFallbackLevel()
+    }
+
+    /**
+     * Find all stack cells that participate in dependency cycles.
+     * Uses the same Kahn's algorithm as solve — any unprocessed nodes are in cycles.
+     */
+    private fun findCycleCells(
+        stacks: Map<HexCell, HexStack>,
+        boardCells: Set<HexCell>
+    ): Set<HexCell> {
+        val stackCells = stacks.keys.toList()
+        val n = stackCells.size
+        val cellToIndex = HashMap<HexCell, Int>(n * 2)
+        for (i in stackCells.indices) cellToIndex[stackCells[i]] = i
+
+        val blockedByCount = IntArray(n)
+        val blocks = Array(n) { mutableListOf<Int>() }
+
+        for (i in stackCells.indices) {
+            val cell = stackCells[i]
+            val stack = stacks[cell]!!
+            var current = cell.neighbor(stack.direction)
+            while (current in boardCells) {
+                val blockerIdx = cellToIndex[current]
+                if (blockerIdx != null) {
+                    blockedByCount[i]++
+                    blocks[blockerIdx].add(i)
+                }
+                current = current.neighbor(stack.direction)
+            }
+        }
+
+        val queue = ArrayDeque<Int>()
+        for (i in 0 until n) {
+            if (blockedByCount[i] == 0) queue.addLast(i)
+        }
+
+        val processed = BooleanArray(n)
+        while (queue.isNotEmpty()) {
+            val idx = queue.removeFirst()
+            processed[idx] = true
+            for (unblocked in blocks[idx]) {
+                blockedByCount[unblocked]--
+                if (blockedByCount[unblocked] == 0) queue.addLast(unblocked)
+            }
+        }
+
+        // Unprocessed nodes are in cycles
+        return stackCells.indices.filter { !processed[it] }.map { stackCells[it] }.toSet()
+    }
+
+    /**
+     * Count how many steps it takes to exit the board from [cell] in [direction].
+     * Fewer steps = closer to edge in that direction.
+     */
+    private fun stepsToExit(cell: HexCell, direction: HexDirection, boardCells: Set<HexCell>): Int {
+        var current = cell.neighbor(direction)
+        var steps = 1
+        while (current in boardCells) {
+            current = current.neighbor(direction)
+            steps++
+        }
+        return steps
     }
 
     /**
