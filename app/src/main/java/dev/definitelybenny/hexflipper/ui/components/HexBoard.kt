@@ -4,10 +4,17 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -103,16 +110,75 @@ private fun HexBoardCanvas(
     onCellTapped: (HexCell) -> Unit,
     modifier: Modifier
 ) {
+    var zoomScale by remember { mutableFloatStateOf(1f) }
+    var panX by remember { mutableFloatStateOf(0f) }
+    var panY by remember { mutableFloatStateOf(0f) }
+
+    // Reset zoom/pan when board changes (new level)
+    LaunchedEffect(boardState.stacks.size + boardState.cells.size) {
+        zoomScale = 1f
+        panX = 0f
+        panY = 0f
+    }
+
     Canvas(
         modifier = modifier
             .pointerInput(boardState) {
-                detectTapGestures { tapOffset ->
-                    val w = size.width.toFloat()
-                    val h = size.height.toFloat()
-                    val layout = computeLayout(boardState, w, h)
-                    val tapped = hitTest(tapOffset.x, tapOffset.y, boardState, layout)
-                    if (tapped != null) {
-                        onCellTapped(tapped)
+                awaitEachGesture {
+                    val firstDown = awaitFirstDown(requireUnconsumed = false)
+                    var hasPanned = false
+                    var hasZoomed = false
+                    val tapPosition = firstDown.position
+
+                    do {
+                        val event = awaitPointerEvent()
+                        val pointers = event.changes
+
+                        if (pointers.size >= 2) {
+                            // Multi-touch: pinch to zoom + pan
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            val centroid = event.calculateCentroid()
+
+                            val newScale = (zoomScale * zoom).coerceIn(0.5f, 5f)
+
+                            // Zoom toward the centroid
+                            if (centroid != Offset.Unspecified) {
+                                panX += (centroid.x - panX) * (1 - zoom)
+                                panY += (centroid.y - panY) * (1 - zoom)
+                            }
+
+                            zoomScale = newScale
+                            panX += pan.x
+                            panY += pan.y
+                            hasZoomed = true
+
+                            pointers.forEach { it.consume() }
+                        } else if (pointers.size == 1) {
+                            val change = pointers.first()
+                            val dragDistance = (change.position - tapPosition).getDistance()
+
+                            if (dragDistance > 20f) {
+                                // Single finger drag = pan
+                                val pan = event.calculatePan()
+                                panX += pan.x
+                                panY += pan.y
+                                hasPanned = true
+                                change.consume()
+                            }
+                        }
+                    } while (pointers.any { it.pressed })
+
+                    // Only register tap if we didn't pan or zoom
+                    if (!hasPanned && !hasZoomed) {
+                        val w = size.width.toFloat()
+                        val h = size.height.toFloat()
+                        val layout = computeLayout(boardState, w, h)
+                        val zoomedLayout = layout.withZoom(zoomScale, panX, panY)
+                        val tapped = hitTest(tapPosition.x, tapPosition.y, boardState, zoomedLayout)
+                        if (tapped != null) {
+                            onCellTapped(tapped)
+                        }
                     }
                 }
             }
@@ -123,7 +189,8 @@ private fun HexBoardCanvas(
         // Light background
         drawRect(color = BackgroundColor)
 
-        val layout = computeLayout(boardState, canvasWidth, canvasHeight)
+        val baseLayout = computeLayout(boardState, canvasWidth, canvasHeight)
+        val layout = baseLayout.withZoom(zoomScale, panX, panY)
         val hexSize = layout.hexSize
 
         val concurrentCells = concurrentAnims.map { it.first.cell }.toSet()
@@ -221,7 +288,16 @@ private fun HexBoardCanvas(
 // Layout
 // ---------------------------------------------------------------------------
 
-private data class HexLayout(val hexSize: Float, val offsetX: Float, val offsetY: Float)
+private data class HexLayout(val hexSize: Float, val offsetX: Float, val offsetY: Float) {
+    /** Apply zoom scale and pan offset to this layout. */
+    fun withZoom(scale: Float, panX: Float, panY: Float): HexLayout {
+        return HexLayout(
+            hexSize = hexSize * scale,
+            offsetX = offsetX * scale + panX,
+            offsetY = offsetY * scale + panY
+        )
+    }
+}
 
 /**
  * Convert axial hex (q, r) to screen position (pointy-top).
