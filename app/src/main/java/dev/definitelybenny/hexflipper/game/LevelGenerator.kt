@@ -96,9 +96,9 @@ object LevelGenerator {
      * Break dependency cycles by re-pointing the minimum number of stacks.
      *
      * Iteratively finds cycles, picks one random stack from each cycle,
-     * and re-points it to a direction that exits the board (shortest path).
-     * Repeats until no cycles remain. This preserves most random directions
-     * while guaranteeing solvability.
+     * and re-points it to a random direction that doesn't re-create a cycle.
+     * Falls back to nearest-edge only if no cycle-free random direction exists.
+     * This preserves direction variety while guaranteeing solvability.
      */
     private fun breakCyclesMinimal(
         stacks: MutableMap<HexCell, HexStack>,
@@ -106,26 +106,23 @@ object LevelGenerator {
         random: Random
     ) {
         val directions = HexDirection.entries
-        var maxIterations = 20 // safety limit
+        var maxIterations = 50 // safety limit
 
         while (maxIterations-- > 0) {
             val cycleCells = findCycleCells(stacks, boardCells)
             if (cycleCells.isEmpty()) return // no cycles, done
 
-            // Find strongly connected components (individual cycles) via simple grouping:
-            // walk the dependency chain from each cycle cell to find its cycle group
+            // Find connected cycle groups
             val visited = mutableSetOf<HexCell>()
             for (cell in cycleCells) {
                 if (cell in visited) continue
 
-                // Find this cycle group by following blocking chains
                 val group = mutableSetOf<HexCell>()
                 val queue = ArrayDeque<HexCell>()
                 queue.addLast(cell)
                 while (queue.isNotEmpty()) {
                     val c = queue.removeFirst()
                     if (c !in cycleCells || !group.add(c)) continue
-                    // Find what c blocks and what blocks c
                     val stack = stacks[c]!!
                     var current = c.neighbor(stack.direction)
                     while (current in boardCells) {
@@ -137,10 +134,50 @@ object LevelGenerator {
 
                 // Pick one random stack from this group to fix
                 val toFix = group.random(random)
+                val currentDir = stacks[toFix]!!.direction
+
+                // Try random directions that don't re-create a cycle
                 val shuffledDirs = directions.shuffled(random)
-                val dir = shuffledDirs.minByOrNull { d -> stepsToExit(toFix, d, boardCells) }
-                    ?: shuffledDirs.first()
-                stacks[toFix] = HexStack(cell = toFix, color = dir.color, direction = dir, height = 1)
+                var fixed = false
+                for (candidateDir in shuffledDirs) {
+                    if (candidateDir == currentDir) continue
+
+                    // Temporarily apply this direction and check if it creates a new cycle
+                    stacks[toFix] = HexStack(cell = toFix, color = candidateDir.color, direction = candidateDir, height = 1)
+
+                    // Quick check: does this stack's path hit any stack that depends on it?
+                    // (i.e., would this create a mutual blocking situation?)
+                    var pathClear = true
+                    var current = toFix.neighbor(candidateDir)
+                    while (current in boardCells) {
+                        val blocker = stacks[current]
+                        if (blocker != null) {
+                            // Check if blocker's path goes through toFix (mutual dependency)
+                            var blockerPath = blocker.cell.neighbor(blocker.direction)
+                            while (blockerPath in boardCells) {
+                                if (blockerPath == toFix) {
+                                    pathClear = false
+                                    break
+                                }
+                                blockerPath = blockerPath.neighbor(blocker.direction)
+                            }
+                        }
+                        if (!pathClear) break
+                        current = current.neighbor(candidateDir)
+                    }
+
+                    if (pathClear) {
+                        fixed = true
+                        break
+                    }
+                }
+
+                // If no cycle-free random direction found, fall back to nearest edge
+                if (!fixed) {
+                    val dir = shuffledDirs.minByOrNull { d -> stepsToExit(toFix, d, boardCells) }
+                        ?: shuffledDirs.first()
+                    stacks[toFix] = HexStack(cell = toFix, color = dir.color, direction = dir, height = 1)
+                }
             }
         }
     }
