@@ -29,15 +29,10 @@ object LevelGenerator {
     }
 
     private fun generateWithStackCount(numStacks: Int, random: Random): Level {
-        // Use constructive placement for large puzzles — much faster than random trial and error
-        if (numStacks > 20) {
-            return generateLargeLevel(numStacks, random)
-        }
-
-        // Small puzzles: random placement with solvability check
         val emptyPadding = when {
             numStacks <= 8 -> maxOf(4, numStacks)
-            else -> numStacks / 2
+            numStacks <= 25 -> numStacks / 2
+            else -> maxOf(2, numStacks / 5)
         }
         val boardSize = numStacks + emptyPadding
         val directions = HexDirection.entries
@@ -45,7 +40,7 @@ object LevelGenerator {
         repeat(MAX_BOARD_ATTEMPTS) {
             val allCells = generateBoardShape(boardSize, random)
             val cellList = allCells.toList()
-            if (cellList.size < numStacks + 2) return@repeat
+            if (cellList.size < numStacks + 1) return@repeat
 
             repeat(MAX_STACK_ATTEMPTS) {
                 val shuffled = cellList.shuffled(random)
@@ -55,12 +50,12 @@ object LevelGenerator {
                 val stacks = mutableMapOf<HexCell, HexStack>()
                 for (cell in stackCells) {
                     val dir = directions[random.nextInt(directions.size)]
-                    stacks[cell] = HexStack(
-                        cell = cell,
-                        color = dir.color,
-                        direction = dir,
-                        height = 1
-                    )
+                    stacks[cell] = HexStack(cell = cell, color = dir.color, direction = dir, height = 1)
+                }
+
+                // For large puzzles, break cycles by fixing minimum stacks
+                if (numStacks > 20) {
+                    breakCyclesMinimal(stacks, allCells, random)
                 }
 
                 val cells = mutableMapOf<HexCell, CellType>()
@@ -81,62 +76,77 @@ object LevelGenerator {
     }
 
     /**
-     * Constructive generation for large puzzles (20+ stacks).
+     * Async generation with progress reporting for large puzzles.
+     */
+    suspend fun generateAsync(
+        tier: DifficultyTier,
+        random: Random = Random,
+        onProgress: (attempt: Int, maxAttempts: Int) -> Unit = { _, _ -> }
+    ): Level {
+        val numStacks = random.nextInt(tier.stackRange.first, tier.stackRange.last + 1)
+
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val level = generateWithStackCount(numStacks, random)
+            onProgress(1, 1)
+            level
+        }
+    }
+
+    /**
+     * Break dependency cycles by re-pointing the minimum number of stacks.
      *
-     * Assigns random directions first, then detects and breaks dependency
-     * cycles by re-pointing only the stacks involved in cycles toward the
-     * nearest board edge. This preserves most of the randomness/difficulty
+     * Iteratively finds cycles, picks one random stack from each cycle,
+     * and re-points it to a direction that exits the board (shortest path).
+     * Repeats until no cycles remain. This preserves most random directions
      * while guaranteeing solvability.
      */
-    private fun generateLargeLevel(numStacks: Int, random: Random): Level {
-        val emptyPadding = maxOf(2, numStacks / 5)
-        val boardSize = numStacks + emptyPadding
+    private fun breakCyclesMinimal(
+        stacks: MutableMap<HexCell, HexStack>,
+        boardCells: Set<HexCell>,
+        random: Random
+    ) {
         val directions = HexDirection.entries
+        var maxIterations = 20 // safety limit
 
-        repeat(MAX_BOARD_ATTEMPTS) {
-            val allCells = generateBoardShape(boardSize, random)
-            val cellList = allCells.toList()
-            if (cellList.size < numStacks + 1) return@repeat
+        while (maxIterations-- > 0) {
+            val cycleCells = findCycleCells(stacks, boardCells)
+            if (cycleCells.isEmpty()) return // no cycles, done
 
-            val shuffled = cellList.shuffled(random)
-            val stackCells = shuffled.take(numStacks)
-            val remaining = shuffled.drop(numStacks)
-
-            // Step 1: assign random directions
-            val stacks = mutableMapOf<HexCell, HexStack>()
-            for (cell in stackCells) {
-                val dir = directions[random.nextInt(directions.size)]
-                stacks[cell] = HexStack(cell = cell, color = dir.color, direction = dir, height = 1)
-            }
-
-            // Step 2: find stacks involved in cycles and re-point them
-            val cycleCells = findCycleCells(stacks, allCells)
+            // Find strongly connected components (individual cycles) via simple grouping:
+            // walk the dependency chain from each cycle cell to find its cycle group
+            val visited = mutableSetOf<HexCell>()
             for (cell in cycleCells) {
+                if (cell in visited) continue
+
+                // Find this cycle group by following blocking chains
+                val group = mutableSetOf<HexCell>()
+                val queue = ArrayDeque<HexCell>()
+                queue.addLast(cell)
+                while (queue.isNotEmpty()) {
+                    val c = queue.removeFirst()
+                    if (c !in cycleCells || !group.add(c)) continue
+                    // Find what c blocks and what blocks c
+                    val stack = stacks[c]!!
+                    var current = c.neighbor(stack.direction)
+                    while (current in boardCells) {
+                        if (current in cycleCells) queue.addLast(current)
+                        current = current.neighbor(stack.direction)
+                    }
+                }
+                visited.addAll(group)
+
+                // Pick one random stack from this group to fix
+                val toFix = group.random(random)
                 val shuffledDirs = directions.shuffled(random)
-                val dir = shuffledDirs.minByOrNull { d -> stepsToExit(cell, d, allCells) }
+                val dir = shuffledDirs.minByOrNull { d -> stepsToExit(toFix, d, boardCells) }
                     ?: shuffledDirs.first()
-                stacks[cell] = HexStack(cell = cell, color = dir.color, direction = dir, height = 1)
-            }
-
-            val cells = mutableMapOf<HexCell, CellType>()
-            for (cell in remaining) {
-                cells[cell] = CellType.EMPTY
-            }
-
-            val state = BoardState(cells, stacks)
-            val par = solve(state)
-
-            if (par != null && par > 1) {
-                return Level(number = 0, cells = cells, stacks = stacks, par = par)
+                stacks[toFix] = HexStack(cell = toFix, color = dir.color, direction = dir, height = 1)
             }
         }
-
-        return createFallbackLevel()
     }
 
     /**
      * Find all stack cells that participate in dependency cycles.
-     * Uses the same Kahn's algorithm as solve — any unprocessed nodes are in cycles.
      */
     private fun findCycleCells(
         stacks: Map<HexCell, HexStack>,
@@ -179,7 +189,6 @@ object LevelGenerator {
             }
         }
 
-        // Unprocessed nodes are in cycles
         return stackCells.indices.filter { !processed[it] }.map { stackCells[it] }.toSet()
     }
 

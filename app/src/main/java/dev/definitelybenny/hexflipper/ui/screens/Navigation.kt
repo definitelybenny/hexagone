@@ -5,9 +5,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -190,12 +194,37 @@ fun HexFlipperNavHost(
             val tierName = backStackEntry.arguments?.getString("tier") ?: DifficultyTier.EASY.name
             val tier = DifficultyTier.valueOf(tierName)
             val viewModel: GameViewModel = viewModel()
+            val scope = rememberCoroutineScope()
 
-            var currentLevel by remember { mutableStateOf(LevelGenerator.generate(tier)) }
+            var currentLevel by remember { mutableStateOf<dev.definitelybenny.hexflipper.model.Level?>(null) }
+            var isGenerating by remember { mutableStateOf(true) }
+            var genProgress by remember { mutableFloatStateOf(-1f) }
+            var genStackCount by remember { mutableIntStateOf(0) }
+            // Counter to trigger regeneration
+            var generateTrigger by remember { mutableIntStateOf(0) }
 
-            LaunchedEffect(currentLevel) {
-                viewModel.loadLevel(currentLevel)
+            LaunchedEffect(generateTrigger) {
+                isGenerating = true
+                genProgress = -1f
+                val stackCount = kotlin.random.Random.nextInt(tier.stackRange.first, tier.stackRange.last + 1)
+                genStackCount = stackCount
+                val level = LevelGenerator.generateAsync(tier) { attempt, maxAttempts ->
+                    genProgress = attempt.toFloat() / maxAttempts.toFloat()
+                }
+                currentLevel = level
+                isGenerating = false
             }
+
+            val level = currentLevel
+            if (isGenerating || level == null) {
+                GeneratingScreen(
+                    progress = genProgress,
+                    stackCount = genStackCount
+                )
+            } else {
+                LaunchedEffect(level) {
+                    viewModel.loadLevel(level)
+                }
 
             val boardState by viewModel.boardState.collectAsState()
             val animatingStacks by viewModel.animatingStacks.collectAsState()
@@ -246,13 +275,13 @@ fun HexFlipperNavHost(
                 LevelCompleteDialog(
                     stars = stars,
                     moveCount = moveCount,
-                    par = currentLevel.par,
+                    par = level.par,
                     isRandomMode = true,
                     onNext = {
-                        currentLevel = LevelGenerator.generate(tier)
+                        generateTrigger++
                     },
                     onReplay = {
-                        viewModel.loadLevel(currentLevel)
+                        viewModel.loadLevel(level)
                     },
                     onChangeDifficulty = {
                         navController.popBackStack(Screen.DifficultySelect.route, false)
@@ -260,6 +289,7 @@ fun HexFlipperNavHost(
                     onMenu = { navController.popBackStack(Screen.MainMenu.route, false) }
                 )
             }
+            } // end else (not generating)
         }
 
         composable(Screen.Settings.route) {
