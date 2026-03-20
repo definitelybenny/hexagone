@@ -103,7 +103,7 @@ fun HexFlipperNavHost(
             }
 
             val boardState by viewModel.boardState.collectAsState()
-            val animatingStack by viewModel.animatingStack.collectAsState()
+            val animatingStacks by viewModel.animatingStacks.collectAsState()
             val moveCount by viewModel.moveCount.collectAsState()
             val canUndo by viewModel.canUndo.collectAsState()
             val isComplete by viewModel.isComplete.collectAsState()
@@ -118,15 +118,9 @@ fun HexFlipperNavHost(
                 if (!tutorialSeen) showTutorial = true
             }
 
-            LaunchedEffect(animatingStack) {
-                if (hapticEnabled && animatingStack?.type == dev.definitelybenny.hexflipper.ui.components.AnimationType.SHAKE) {
-                    campaignView.performHapticFeedback(HapticFeedbackConstants.REJECT)
-                }
-            }
-
             GameScreen(
                 boardState = boardState,
-                animatingStack = animatingStack,
+                animatingStacks = animatingStacks,
                 moveCount = moveCount,
                 canUndo = canUndo,
                 onCellTapped = { cell ->
@@ -204,7 +198,7 @@ fun HexFlipperNavHost(
             }
 
             val boardState by viewModel.boardState.collectAsState()
-            val animatingStack by viewModel.animatingStack.collectAsState()
+            val animatingStacks by viewModel.animatingStacks.collectAsState()
             val moveCount by viewModel.moveCount.collectAsState()
             val canUndo by viewModel.canUndo.collectAsState()
             val isComplete by viewModel.isComplete.collectAsState()
@@ -219,15 +213,9 @@ fun HexFlipperNavHost(
                 if (!tutorialSeen) showTutorial = true
             }
 
-            LaunchedEffect(animatingStack) {
-                if (hapticEnabled && animatingStack?.type == dev.definitelybenny.hexflipper.ui.components.AnimationType.SHAKE) {
-                    randomView.performHapticFeedback(HapticFeedbackConstants.REJECT)
-                }
-            }
-
             GameScreen(
                 boardState = boardState,
-                animatingStack = animatingStack,
+                animatingStacks = animatingStacks,
                 moveCount = moveCount,
                 canUndo = canUndo,
                 onCellTapped = { cell ->

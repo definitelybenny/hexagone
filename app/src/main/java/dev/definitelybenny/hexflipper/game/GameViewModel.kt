@@ -14,10 +14,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Jetpack Compose ViewModel for Hex Flipper.
  *
- * Wraps [GameState] and exposes reactive [StateFlow]s that the UI
- * can collect. Animations are coordinated through [animatingStack]:
- * a successful move sets the animating stack first, and the board
- * state is only updated once [onAnimationComplete] is called.
+ * Supports concurrent animations — multiple stacks can animate
+ * out simultaneously for fast, responsive gameplay.
  */
 class GameViewModel : ViewModel() {
 
@@ -40,25 +38,21 @@ class GameViewModel : ViewModel() {
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
 
-    private val _animatingStack = MutableStateFlow<AnimatingStack?>(null)
-    val animatingStack: StateFlow<AnimatingStack?> = _animatingStack.asStateFlow()
+    private val _animatingStacks = MutableStateFlow<List<AnimatingStack>>(emptyList())
+    val animatingStacks: StateFlow<List<AnimatingStack>> = _animatingStacks.asStateFlow()
 
     private val _currentLevelNumber = MutableStateFlow(1)
     val currentLevelNumber: StateFlow<Int> = _currentLevelNumber.asStateFlow()
 
-    /** The result of the pending move, applied after animation completes. */
-    private var pendingMoveResult: MoveResult.Success? = null
-
-    /** Snapshot taken before a pending move so we can defer the actual removal. */
-    private var stateBeforePendingMove: BoardState? = null
+    /** Cells currently animating out — treated as already removed for tap logic. */
+    private val concurrentPendingCells = mutableSetOf<HexCell>()
 
     // ── Public API ───────────────────────────────────────────
 
     /** Load (or reload) a level, resetting all state. */
     fun loadLevel(level: Level) {
-        _animatingStack.value = null
-        pendingMoveResult = null
-        stateBeforePendingMove = null
+        _animatingStacks.value = emptyList()
+        concurrentPendingCells.clear()
         gameState.reset(level)
         _currentLevelNumber.value = level.number
         publishState()
@@ -66,107 +60,101 @@ class GameViewModel : ViewModel() {
 
     /**
      * Called when the player taps a hex cell.
-     *
-     * If a stack is already animating the tap is ignored.
-     * On a successful move the animation is started but the board state
-     * is not yet updated -- that happens in [onAnimationComplete].
+     * Allows concurrent animations — tap as fast as you want.
      */
     fun onCellTapped(cell: HexCell) {
-        // Ignore taps while an animation is in progress.
-        if (_animatingStack.value != null) return
+        // Skip if this cell is already animating out
+        if (cell in concurrentPendingCells) return
 
         val stack = gameState.boardState.stackAt(cell) ?: return
 
-        // Compute path *before* mutating state (needed for slide animation).
+        if (!canMoveConcurrent(cell)) {
+            // Blocked — count as move and shake
+            gameState.tapCell(cell)
+            _moveCount.value = gameState.moveCount
+
+            val shakeAnim = AnimatingStack(
+                cell = cell,
+                stack = stack,
+                path = listOf(cell),
+                type = AnimationType.SHAKE
+            )
+            _animatingStacks.value = _animatingStacks.value + shakeAnim
+            return
+        }
+
+        // Compute path before mutating
         val path = gameState.boardState.slidePath(cell)
 
-        // Perform the move inside GameState (updates move count for both success and blocked).
+        // Perform the move in GameState
         val result = gameState.tapCell(cell)
+        if (result is MoveResult.Success) {
+            concurrentPendingCells.add(cell)
+            _moveCount.value = gameState.moveCount
+            _canUndo.value = gameState.canUndo
 
-        when (result) {
-            is MoveResult.Blocked -> {
-                // Show a shake animation and update move count.
-                _moveCount.value = gameState.moveCount
-                _animatingStack.value = AnimatingStack(
-                    cell = cell,
-                    stack = stack,
-                    path = listOf(cell),
-                    type = AnimationType.SHAKE
-                )
-            }
-            is MoveResult.Success -> {
-                // We want the UI to keep showing the stack while it animates out,
-                // so we defer the board state update until onAnimationComplete.
-                stateBeforePendingMove = gameState.boardState
-                pendingMoveResult = result
-
-                // Publish updated move count / undo availability immediately,
-                // but keep the old board so the stack is still visible.
-                _moveCount.value = gameState.moveCount
-                _canUndo.value = gameState.canUndo
-
-                _animatingStack.value = AnimatingStack(
-                    cell = cell,
-                    stack = result.stack,
-                    path = path,
-                    type = AnimationType.SLIDE_OFF
-                )
-            }
-            is MoveResult.Empty -> { /* shouldn't reach here since we checked stackAt above */ }
+            val slideAnim = AnimatingStack(
+                cell = cell,
+                stack = result.stack,
+                path = path,
+                type = AnimationType.SLIDE_OFF
+            )
+            _animatingStacks.value = _animatingStacks.value + slideAnim
         }
     }
 
     /** Undo the last move. */
     fun onUndo() {
-        // Cancel any in-progress animation.
-        if (_animatingStack.value != null) {
-            _animatingStack.value = null
-            pendingMoveResult = null
-            stateBeforePendingMove = null
-        }
+        _animatingStacks.value = emptyList()
+        concurrentPendingCells.clear()
         gameState.undo()
         publishState()
     }
 
-    /**
-     * Highlight a cell whose stack can be moved.
-     *
-     * Triggers a shake animation on the movable stack
-     * to draw the player's eye.
-     */
+    /** Highlight a cell whose stack can be moved. */
     fun onHint() {
-        if (_animatingStack.value != null) return
         val hintCell = gameState.getHint() ?: return
+        if (hintCell in concurrentPendingCells) return
         val stack = gameState.boardState.stackAt(hintCell) ?: return
-        _animatingStack.value = AnimatingStack(
+        val shakeAnim = AnimatingStack(
             cell = hintCell,
             stack = stack,
             path = listOf(hintCell),
             type = AnimationType.SHAKE
         )
+        _animatingStacks.value = _animatingStacks.value + shakeAnim
     }
 
-    /**
-     * Called by the UI once the current animation finishes.
-     *
-     * If the animation was a slide-off, the board state is now updated
-     * (removing the stack) and completion is checked.
-     */
-    fun onAnimationComplete() {
-        val pending = pendingMoveResult
-        _animatingStack.value = null
-
-        if (pending != null) {
-            pendingMoveResult = null
-            stateBeforePendingMove = null
-            // Now publish the real (post-removal) board state.
-            publishState()
-        }
+    /** Called by the UI when a specific animation finishes. */
+    fun onAnimationComplete(cell: HexCell) {
+        concurrentPendingCells.remove(cell)
+        _animatingStacks.value = _animatingStacks.value.filter { it.cell != cell }
+        publishState()
     }
 
     // ── Internals ────────────────────────────────────────────
 
-    /** Push all derived values from [gameState] into the flows. */
+    /**
+     * Check if a stack can move, treating concurrently-animating stacks as already gone.
+     */
+    private fun canMoveConcurrent(cell: HexCell): Boolean {
+        val stack = gameState.boardState.stackAt(cell) ?: return false
+        var current = cell.neighbor(stack.direction)
+        while (true) {
+            val boardState = gameState.boardState
+            if (current !in boardState.cells && current !in boardState.stacks) {
+                return true
+            }
+            if (boardState.stacks.containsKey(current) && current !in concurrentPendingCells) {
+                return false
+            }
+            if (boardState.cells[current] == dev.definitelybenny.hexflipper.model.CellType.WALL) {
+                return false
+            }
+            current = current.neighbor(stack.direction)
+        }
+    }
+
     private fun publishState() {
         _boardState.value = gameState.boardState
         _moveCount.value = gameState.moveCount

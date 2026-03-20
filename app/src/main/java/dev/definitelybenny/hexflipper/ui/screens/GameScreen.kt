@@ -39,14 +39,14 @@ private val LightText = Color.White
 @Composable
 fun GameScreen(
     boardState: BoardState,
-    animatingStack: AnimatingStack?,
+    animatingStacks: List<AnimatingStack>,
     moveCount: Int,
     canUndo: Boolean,
     onCellTapped: (HexCell) -> Unit,
     onUndo: () -> Unit,
     onHint: () -> Unit,
     onPause: () -> Unit,
-    onAnimationFinished: () -> Unit,
+    onAnimationFinished: (HexCell) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -133,7 +133,7 @@ fun GameScreen(
         ) {
             HexBoard(
                 boardState = boardState,
-                animatingStack = animatingStack,
+                animatingStacks = animatingStacks,
                 onCellTapped = onCellTapped,
                 onAnimationFinished = onAnimationFinished,
                 modifier = Modifier.fillMaxSize()

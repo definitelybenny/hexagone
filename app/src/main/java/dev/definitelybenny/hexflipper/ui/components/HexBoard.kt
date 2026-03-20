@@ -67,43 +67,39 @@ private const val DEPTH_PER_TILE = 0.12f
 @Composable
 fun HexBoard(
     boardState: BoardState,
-    animatingStack: AnimatingStack?,
+    animatingStacks: List<AnimatingStack>,
     onCellTapped: (HexCell) -> Unit,
-    onAnimationFinished: () -> Unit = {},
+    onAnimationFinished: (HexCell) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val animProgress = remember(animatingStack) { Animatable(0f) }
-
-    LaunchedEffect(animatingStack) {
-        if (animatingStack != null) {
-            animProgress.snapTo(0f)
-            val duration = when (animatingStack.type) {
+    val concurrentProgresses = animatingStacks.map { anim ->
+        val progress = remember(anim) { Animatable(0f) }
+        LaunchedEffect(anim) {
+            progress.snapTo(0f)
+            val duration = when (anim.type) {
                 AnimationType.SLIDE_OFF -> {
-                    // Scale duration to path length so each hop takes ~250ms
-                    val segments = (animatingStack.path.size - 1).coerceAtLeast(1)
+                    val segments = (anim.path.size - 1).coerceAtLeast(1)
                     250 * segments
                 }
                 AnimationType.SHAKE -> 200
             }
-            animProgress.animateTo(
+            progress.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = duration, easing = LinearEasing)
             )
-            onAnimationFinished()
+            onAnimationFinished(anim.cell)
         }
+        Pair(anim, progress)
     }
 
-    // Overload: accept the old parameter name so GameScreen compiles.
-    @Suppress("NOTHING_TO_INLINE")
-    HexBoardCanvas(boardState, animatingStack, animProgress, onCellTapped, modifier)
+    HexBoardCanvas(boardState, concurrentProgresses, onCellTapped, modifier)
 }
 
 
 @Composable
 private fun HexBoardCanvas(
     boardState: BoardState,
-    animatingStack: AnimatingStack?,
-    animProgress: Animatable<Float, *>,
+    concurrentAnims: List<Pair<AnimatingStack, Animatable<Float, *>>>,
     onCellTapped: (HexCell) -> Unit,
     modifier: Modifier
 ) {
@@ -130,7 +126,7 @@ private fun HexBoardCanvas(
         val layout = computeLayout(boardState, canvasWidth, canvasHeight)
         val hexSize = layout.hexSize
 
-        val animCell = animatingStack?.cell
+        val concurrentCells = concurrentAnims.map { it.first.cell }.toSet()
 
         // All board cells sorted by r ascending (back rows first) so depth edges overlap correctly.
         val allCells = boardState.boardCells.sortedWith(
@@ -143,17 +139,13 @@ private fun HexBoardCanvas(
             val stack = boardState.stackAt(cell)
 
             when {
-                // Cell has a stack (and is not the animating cell)
-                stack != null && cell != animCell -> {
-                    drawStackCell(cx, cy, hexSize, stack)
-                }
-                // Cell has a stack that is animating — draw the stack statically
-                // (the animation overlay handles the moving piece)
-                stack != null && cell == animCell -> {
-                    // For SHAKE, draw the base (empty cell underneath) —
-                    // the stack itself is drawn in the animation pass.
-                    // For SLIDE_OFF, the stack is sliding away so show empty underneath.
+                // Cell has a stack that is animating
+                stack != null && cell in concurrentCells -> {
                     drawEmptyCell(cx, cy, hexSize)
+                }
+                // Cell has a stack (not animating)
+                stack != null -> {
+                    drawStackCell(cx, cy, hexSize, stack)
                 }
                 // Wall cell
                 boardState.cells[cell] == CellType.WALL -> {
@@ -166,14 +158,14 @@ private fun HexBoardCanvas(
             }
         }
 
-        // --- Draw animating stack ---
-        if (animatingStack != null) {
-            val t = animProgress.value
-            val stack = animatingStack.stack
+        // --- Draw animations ---
+        for ((anim, progress) in concurrentAnims) {
+            val t = progress.value
+            val cStack = anim.stack
 
-            when (animatingStack.type) {
+            when (anim.type) {
                 AnimationType.SLIDE_OFF -> {
-                    val path = animatingStack.path
+                    val path = anim.path
                     if (path.size >= 2) {
                         val totalSegments = path.size - 1
                         val rawIndex = t * totalSegments
@@ -186,10 +178,7 @@ private fun HexBoardCanvas(
                             layout
                         )
 
-                        // Flip angle for this hop: 0 → PI (one full end-over-end)
                         val flipAngle = segT * Math.PI.toFloat()
-
-                        // Position: linear between cells + semicircular hop arc
                         val linearX = from.first + (to.first - from.first) * segT
                         val linearY = from.second + (to.second - from.second) * segT
                         val hopHeight = hexSize * 0.4f
@@ -197,33 +186,31 @@ private fun HexBoardCanvas(
                         val cx = linearX
                         val cy = linearY - arcLift
 
-                        // Flip squish: 1 → 0 → -1 (edge-on at midpoint)
                         val flipScale = cos(flipAngle)
                         val absScale = abs(flipScale).coerceAtLeast(0.05f)
                         val isBackFace = flipScale < 0f
 
-                        // Fade out only on the final segment (off the board)
                         val isLastSeg = segIndex == totalSegments - 1
                         val alpha = if (isLastSeg) (1f - segT).coerceIn(0f, 1f) else 1f
 
                         drawFlippingStack(
-                            cx, cy, hexSize, stack, alpha,
+                            cx, cy, hexSize, cStack, alpha,
                             flipScale = absScale,
-                            flipAxis = stack.direction.angleRadians,
+                            flipAxis = cStack.direction.angleRadians,
                             showBack = isBackFace
                         )
                     }
                 }
 
                 AnimationType.SHAKE -> {
-                    val (baseCx, baseCy) = cellToScreen(animatingStack.cell, layout)
-                    val perpAngle = stack.direction.angleRadians + (Math.PI.toFloat() / 2f)
+                    val (baseCx, baseCy) = cellToScreen(anim.cell, layout)
+                    val perpAngle = cStack.direction.angleRadians + (Math.PI.toFloat() / 2f)
                     val shakeAmount = hexSize * 0.10f *
                         sin(t * 4f * Math.PI.toFloat()) * (1f - t)
                     val cx = baseCx + cos(perpAngle) * shakeAmount
                     val cy = baseCy + sin(perpAngle) * shakeAmount
 
-                    drawStackCell(cx, cy, hexSize, stack, 1f)
+                    drawStackCell(cx, cy, hexSize, cStack, 1f)
                 }
             }
         }
