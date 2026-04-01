@@ -1,0 +1,244 @@
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --forest-green: #2d5a3d;
+  --forest-dark: #1e3a28;
+  --cinnabar: #a03a2a;
+  --cinnabar-light: #b8452e;
+  --parchment: #f0e8d8;
+  --parchment-dark: #e4d9c4;
+  --gold: #b8942e;
+  --gold-light: #c5a44e;
+  --text-dark: #2a2218;
+  --text-muted: #6b5d4d;
+}
+
+body {
+  font-family: 'Montserrat', system-ui, sans-serif;
+  background: var(--parchment);
+  color: var(--text-dark);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Seigaiha wave pattern overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("seigaiha.svg");
+  background-repeat: repeat;
+  background-size: 80px 40px;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Paper texture overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 101;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1, h2, h3 {
+  font-family: 'Libre Baskerville', Georgia, serif;
+}
+
+/* Nav */
+nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 32px;
+}
+
+nav .logo {
+  font-family: 'Libre Baskerville', Georgia, serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--forest-green);
+  font-style: italic;
+}
+
+nav .links {
+  display: flex;
+  gap: 24px;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+nav .links a {
+  color: var(--text-dark);
+  transition: color 0.2s;
+}
+
+nav .links a:hover {
+  color: var(--forest-green);
+}
+
+/* Hero */
+.hero {
+  text-align: center;
+  padding: 48px 24px 24px;
+}
+
+.hero h1 {
+  font-size: 2.8rem;
+  font-weight: 700;
+  color: var(--forest-green);
+  margin-bottom: 4px;
+}
+
+.hero .subtitle {
+  font-family: 'Libre Baskerville', Georgia, serif;
+  font-size: 1.15rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.hero .tagline {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  max-width: 500px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* App icon placeholder */
+.app-hero-icon {
+  width: 120px;
+  height: 120px;
+  background: var(--parchment-dark);
+  border: 2px solid rgba(42, 34, 24, 0.12);
+  border-radius: 24px;
+  margin: 24px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+}
+
+/* Content sections */
+.content {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 24px 48px;
+  position: relative;
+  z-index: 1;
+}
+
+.content h2 {
+  font-size: 1.4rem;
+  color: var(--forest-green);
+  margin-bottom: 12px;
+  margin-top: 32px;
+}
+
+.content p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.content ul {
+  margin: 8px 0 16px 24px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.content a {
+  color: var(--forest-green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.content a:hover {
+  color: var(--cinnabar);
+}
+
+/* Policy card */
+.policy-card {
+  background: var(--parchment-dark);
+  border: 1px solid rgba(42, 34, 24, 0.12);
+  border-radius: 8px;
+  padding: 32px;
+  margin-top: 16px;
+  box-shadow: 0 2px 8px rgba(42, 34, 24, 0.06);
+}
+
+/* CTA button */
+.cta {
+  display: inline-block;
+  background: var(--forest-green);
+  color: var(--parchment);
+  padding: 12px 28px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background 0.2s;
+  margin-top: 8px;
+}
+
+.cta:hover {
+  background: var(--forest-dark);
+  color: var(--parchment);
+}
+
+/* Footer */
+footer {
+  margin-top: auto;
+  text-align: center;
+  padding: 32px 24px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+footer a {
+  color: var(--forest-green);
+}
+
+footer .motto {
+  font-family: 'Libre Baskerville', Georgia, serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--forest-green);
+  margin-top: 4px;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .hero h1 {
+    font-size: 2rem;
+  }
+
+  nav {
+    padding: 16px;
+  }
+
+  .content {
+    padding: 0 16px 32px;
+  }
+
+  .policy-card {
+    padding: 20px;
+  }
+}
